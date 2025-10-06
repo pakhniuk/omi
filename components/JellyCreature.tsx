@@ -37,18 +37,18 @@ class Ball {
 
   think(mousePos: { x: number; y: number }) {
     // distance between dot and mouse
-    let dx = this.x - mousePos.x;
-    let dy = this.y - mousePos.y;
+    const dx = this.x - mousePos.x;
+    const dy = this.y - mousePos.y;
 
-    let dist = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
+    const dist = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
 
     // push away from mouse
     if (dist < this.mouseRadius) {
-      let angle = Math.atan2(dy, dx);
+      const angle = Math.atan2(dy, dx);
 
       // distance between dot and dot on circle with mouse center and radius 30
-      let tx = mousePos.x + Math.cos(angle) * this.mouseRadius;
-      let ty = mousePos.y + Math.sin(angle) * this.mouseRadius;
+      const tx = mousePos.x + Math.cos(angle) * this.mouseRadius;
+      const ty = mousePos.y + Math.sin(angle) * this.mouseRadius;
 
       this.vx += tx - this.x;
       this.vy += ty - this.y;
