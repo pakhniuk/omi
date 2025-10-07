@@ -25,9 +25,9 @@ class Ball {
     this.vy = 0;
     this.radius = radius;
     this.color = color;
-    this.mouseRadius = 30;
-    this.friction = 0.7;
-    this.springFactor = -0.01;
+    this.mouseRadius = 60;       // Менша зона впливу миші
+    this.friction = 0.92;         // Майже без тертя = дуже плавно
+    this.springFactor = -0.008;   // М'якше повернення до початкової позиції
   }
 
   setPosition(x: number, y: number) {
@@ -42,16 +42,21 @@ class Ball {
 
     const dist = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
 
-    // push away from mouse
-    if (dist < this.mouseRadius) {
+    // push away from mouse - м'яке відштовхування
+    if (dist < this.mouseRadius && dist > 0) {
       const angle = Math.atan2(dy, dx);
 
-      // distance between dot and dot on circle with mouse center and radius 30
+      // Цільова позиція на краю кола впливу миші
       const tx = mousePos.x + Math.cos(angle) * this.mouseRadius;
       const ty = mousePos.y + Math.sin(angle) * this.mouseRadius;
 
-      this.vx += tx - this.x;
-      this.vy += ty - this.y;
+      // М'який коефіцієнт відштовхування (залежить від відстані)
+      // Чим ближче до миші, тим сильніше відштовхування
+      const pushStrength = 1 - (dist / this.mouseRadius);
+      const pushFactor = pushStrength * 0.3; // 0.3 = м'якість відштовхування
+
+      this.vx += (tx - this.x) * pushFactor;
+      this.vy += (ty - this.y) * pushFactor;
     }
 
     // spring back
@@ -124,6 +129,96 @@ class Balls {
     return balls;
   }
 
+  // Create ghost shape with wavy tentacles at bottom
+  getDotsByGhostShape(x: number, y: number, width: number, height: number, amount: number) {
+    const halfWidth = width / 2;
+    const headHeight = height * 0.4;
+    const bodyHeight = height * 0.6;
+    
+    // Створюємо всі точки контуру спочатку
+    const allPoints: {x: number, y: number, section: string}[] = [];
+    const resolution = 200;
+    
+    for (let i = 0; i <= resolution; i++) {
+      const progress = i / resolution;
+      let px, py, section;
+      
+      if (progress <= 0.2) {
+        const t = progress / 0.2;
+        px = x - halfWidth;
+        py = y + bodyHeight - t * bodyHeight;
+        section = 'left';
+      }
+      else if (progress <= 0.5) {
+        const t = (progress - 0.2) / 0.3;
+        const angle = Math.PI + t * Math.PI;
+        px = x + halfWidth * Math.cos(angle);
+        py = y - bodyHeight + headHeight * (1 + Math.sin(angle));
+        section = 'top';
+      }
+      else if (progress <= 0.7) {
+        const t = (progress - 0.5) / 0.2;
+        px = x + halfWidth;
+        py = y - bodyHeight + headHeight + t * bodyHeight;
+        section = 'right';
+      }
+      else {
+        const t = (progress - 0.7) / 0.3;
+        px = x + halfWidth - t * width;
+        
+        // Створюємо 3 однакових щупальця
+        const numTentacles = 3;
+        const tentacleDepth = 30;
+        
+        // Визначаємо, в якому щупальці ми знаходимось
+        const tentacleIndex = Math.floor(t * numTentacles);
+        const tentacleProgress = (t * numTentacles) - tentacleIndex; // 0 to 1 всередині щупальця
+        
+        // Кожне щупальце має однакову форму (параболу)
+        // 0 -> 0, 0.5 -> 1 (максимум), 1 -> 0
+        const tentacleShape = 1 - Math.pow(2 * tentacleProgress - 1, 2);
+        py = y + bodyHeight + tentacleShape * tentacleDepth;
+        section = 'tentacles';
+      }
+      
+      allPoints.push({x: px, y: py, section});
+    }
+    
+    // Розподіляємо точки: більше на тілі, мінімум на щупальцях
+    const balls: Ball[] = [];
+    const bodyPointCount = Math.floor(amount * 0.65); // 65% на тіло
+    const tentaclePointCount = amount - bodyPointCount; // 35% на щупальця (мінімізовано)
+    
+    // Вибираємо точки для тіла (left + top + right)
+    const bodySection = allPoints.filter(p => p.section !== 'tentacles');
+    const bodyStep = bodySection.length / bodyPointCount;
+    for (let i = 0; i < bodyPointCount; i++) {
+      const idx = Math.round(i * bodyStep);
+      if (idx < bodySection.length) {
+        balls.push(new Ball(bodySection[idx].x, bodySection[idx].y));
+      }
+    }
+    
+    // Вибираємо точки для щупалець - рівномірно розподіляємо по 3 щупальцях
+    const tentacleSection = allPoints.filter(p => p.section === 'tentacles');
+    
+    // Гарантуємо, що кожне щупальце має однакову кількість точок
+    const pointsPerTentacle = Math.max(2, Math.floor(tentaclePointCount / 3));
+    const totalTentaclePoints = pointsPerTentacle * 3;
+    const tentacleStep = tentacleSection.length / totalTentaclePoints;
+    
+    for (let i = 0; i < totalTentaclePoints; i++) {
+      const idx = Math.round(i * tentacleStep);
+      if (idx < tentacleSection.length) {
+        balls.push(new Ball(tentacleSection[idx].x, tentacleSection[idx].y));
+      }
+    }
+
+    this.setBalls(balls);
+
+    return balls;
+  }
+
   connectCircleDots(ctx: CanvasRenderingContext2D) {
     ctx.beginPath();
     ctx.moveTo(this.balls[0].x, this.balls[0].y);
@@ -153,30 +248,54 @@ class Balls {
 export default function JellyCreature() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number | undefined>(undefined);
-  const mousePos = useRef({ x: 300, y: 300 });
+  const mousePos = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const mouseBall = useRef<Ball | undefined>(undefined);
   const balls = useRef<Balls | undefined>(undefined);
   const circleBalls = useRef<Ball[] | undefined>(undefined);
 
   const CONFIG = {
-    width: 600,
-    height: 600,
-    centerX: 300,
-    centerY: 300,
-    radius: 100,
-    points: 10,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    centerX: window.innerWidth / 2,
+    centerY: window.innerHeight / 2,
+    ghostWidth: 240,   // ширша форма привида
+    ghostHeight: 240,  // height of ghost shape (increased)
+    points: 24,        // ще менше точок
   };
 
   useEffect(() => {
     // Initialize
-    mouseBall.current = new Ball(mousePos.current.x, mousePos.current.y, 30, "#FF6B9D");
+    mouseBall.current = new Ball(mousePos.current.x, mousePos.current.y, 20, "#FF8800");
     balls.current = new Balls();
-    circleBalls.current = balls.current.getDotsByCircle(
+    circleBalls.current = balls.current.getDotsByGhostShape(
       CONFIG.centerX,
       CONFIG.centerY,
-      CONFIG.radius,
+      CONFIG.ghostWidth,
+      CONFIG.ghostHeight,
       CONFIG.points
     );
+
+    // Handle window resize
+    const handleResize = () => {
+      if (canvasRef.current) {
+        canvasRef.current.width = window.innerWidth;
+        canvasRef.current.height = window.innerHeight;
+        
+        // Recreate ghost at new center
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        balls.current = new Balls();
+        circleBalls.current = balls.current.getDotsByGhostShape(
+          centerX,
+          centerY,
+          CONFIG.ghostWidth,
+          CONFIG.ghostHeight,
+          CONFIG.points
+        );
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
 
     // Start animation
     startAnimation();
@@ -185,6 +304,7 @@ export default function JellyCreature() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
+      window.removeEventListener('resize', handleResize);
     };
   }, []);
 
@@ -195,7 +315,8 @@ export default function JellyCreature() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+    // Clear canvas (transparent)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Update mouse ball position
     if (mouseBall.current) {
@@ -207,13 +328,13 @@ export default function JellyCreature() {
     if (circleBalls.current) {
       circleBalls.current.forEach((ball) => {
         ball.think(mousePos.current);
-        // ball.draw(ctx); // Uncomment to see individual dots
+        // ball.draw(ctx); // Точки приховані
       });
     }
 
-    // Draw circle with 50% transparent fill
+    // Draw circle with transparent white fill
     if (balls.current) {
-      ctx.fillStyle = "#10B98180"; // Emerald green with 50% transparency
+      ctx.fillStyle = "#FFFFFFDD"; // White with 85% opacity (більш білий)
       balls.current.connectFillCircleDots(ctx);
     }
   };
@@ -238,18 +359,20 @@ export default function JellyCreature() {
   };
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100">
-      <div className="absolute top-8 left-1/2 -translate-x-1/2 text-center pointer-events-none">
-        <h1 className="text-3xl font-light text-gray-700 mb-2">🫧 Jelly Circle</h1>
-        <p className="text-sm text-gray-500">Move your mouse to interact</p>
+    <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+      <div className="absolute top-8 left-1/2 -translate-x-1/2 text-center pointer-events-none z-10">
+        <h1 className="text-6xl font-bold bg-gradient-to-r from-white via-gray-100 to-white bg-clip-text text-transparent drop-shadow-2xl mb-3 tracking-wider">
+          Omi Ghost
+        </h1>
+        <p className="text-base text-gray-300 font-light tracking-wide opacity-80">Move your mouse to interact</p>
       </div>
 
       <canvas
         ref={canvasRef}
-        width={CONFIG.width}
-        height={CONFIG.height}
+        width={window.innerWidth}
+        height={window.innerHeight}
         onMouseMove={handleMouseMove}
-        className="cursor-none"
+        className="cursor-none absolute top-0 left-0 w-full h-full"
       />
     </div>
   );
