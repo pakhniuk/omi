@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Ball class - represents a single dot/ball
 class Ball {
@@ -248,65 +248,15 @@ class Balls {
 export default function JellyCreature() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number | undefined>(undefined);
-  const mousePos = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const mousePos = useRef({ x: 0, y: 0 });
   const mouseBall = useRef<Ball | undefined>(undefined);
   const balls = useRef<Balls | undefined>(undefined);
   const circleBalls = useRef<Ball[] | undefined>(undefined);
 
-  const CONFIG = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    centerX: window.innerWidth / 2,
-    centerY: window.innerHeight / 2,
-    ghostWidth: 240,   // ширша форма привида
-    ghostHeight: 240,  // height of ghost shape (increased)
-    points: 24,        // ще менше точок
-  };
-
-  useEffect(() => {
-    // Initialize
-    mouseBall.current = new Ball(mousePos.current.x, mousePos.current.y, 20, "#FF8800");
-    balls.current = new Balls();
-    circleBalls.current = balls.current.getDotsByGhostShape(
-      CONFIG.centerX,
-      CONFIG.centerY,
-      CONFIG.ghostWidth,
-      CONFIG.ghostHeight,
-      CONFIG.points
-    );
-
-    // Handle window resize
-    const handleResize = () => {
-      if (canvasRef.current) {
-        canvasRef.current.width = window.innerWidth;
-        canvasRef.current.height = window.innerHeight;
-        
-        // Recreate ghost at new center
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        balls.current = new Balls();
-        circleBalls.current = balls.current.getDotsByGhostShape(
-          centerX,
-          centerY,
-          CONFIG.ghostWidth,
-          CONFIG.ghostHeight,
-          CONFIG.points
-        );
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    // Start animation
-    startAnimation();
-
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
+  const [dimensions, setDimensions] = useState({
+    width: 800,
+    height: 600,
+  });
 
   const render = () => {
     const canvas = canvasRef.current;
@@ -347,6 +297,59 @@ export default function JellyCreature() {
     loop();
   };
 
+  useEffect(() => {
+    // Set initial dimensions from window
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    
+    setDimensions({ width, height });
+
+    // Initialize mouse position
+    mousePos.current = { x: width / 2, y: height / 2 };
+    
+    // Initialize
+    mouseBall.current = new Ball(width / 2, height / 2, 20, "#FF8800");
+    balls.current = new Balls();
+    circleBalls.current = balls.current.getDotsByGhostShape(
+      width / 2,
+      height / 2,
+      240,
+      240,
+      24
+    );
+
+    // Handle window resize
+    const handleResize = () => {
+      const newWidth = window.innerWidth;
+      const newHeight = window.innerHeight;
+      
+      setDimensions({ width: newWidth, height: newHeight });
+      
+      // Recreate ghost at new center
+      balls.current = new Balls();
+      circleBalls.current = balls.current.getDotsByGhostShape(
+        newWidth / 2,
+        newHeight / 2,
+        240,
+        240,
+        24
+      );
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    // Start animation
+    startAnimation();
+
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+      window.removeEventListener('resize', handleResize);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -369,8 +372,8 @@ export default function JellyCreature() {
 
       <canvas
         ref={canvasRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
+        width={dimensions.width}
+        height={dimensions.height}
         onMouseMove={handleMouseMove}
         className="cursor-none absolute top-0 left-0 w-full h-full"
       />
